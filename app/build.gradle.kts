@@ -45,6 +45,7 @@ dependencies {
     implementation(libs.androidx.appcompat)
     implementation(libs.dgis.sdk)
     implementation(libs.material)
+    implementation(libs.gson)
 
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.car.app)

@@ -1,81 +1,89 @@
 package ru.android.cars7
 
+import com.google.gson.Gson
 import android.os.Bundle
+import android.util.Log
 import androidx.appcompat.app.AppCompatActivity
 import ru.android.cars7.databinding.ActivityTestPolygonBinding
+import ru.dgis.sdk.coordinates.Bearing
 import ru.dgis.sdk.coordinates.GeoPoint
+import ru.dgis.sdk.map.CameraPosition
 import ru.dgis.sdk.map.Color
 import ru.dgis.sdk.map.MapObjectManager
 import ru.dgis.sdk.map.Polygon
 import ru.dgis.sdk.map.PolygonOptions
+import ru.dgis.sdk.map.Tilt
+import ru.dgis.sdk.map.Zoom
+import ru.dgis.sdk.map.blue
+import ru.dgis.sdk.map.green
+import ru.dgis.sdk.map.lpx
+import ru.dgis.sdk.map.red
+import kotlin.math.absoluteValue
+import kotlin.math.roundToInt
+
 
 class TestPolygonActivity : AppCompatActivity() {
     private val binding by lazy { ActivityTestPolygonBinding.inflate(layoutInflater) }
     private var mapObjectManager: MapObjectManager? = null
-    private val polygonsBlue: MutableList<Polygon> = mutableListOf()
     private val polygonsLightBlue: MutableList<Polygon> = mutableListOf()
+    private val lightBlueColor: Map<Float, Float> = mapOf(5f to 0f, 6f to 0.3f, 7.3f to 0f)
+    private val lightBlueStrokeColor: Map<Float, Float> = mapOf(5f to 0f, 6.0f to 1f)
+    private var connectionCamera: AutoCloseable? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        setContentView(binding.root)
         binding.mapView.getMapAsync { map ->
             mapObjectManager = MapObjectManager(map)
 
+            val jsonString = assets.open("geozone.json").bufferedReader().use { it.readText() }
+            val area: Area = Gson().fromJson(jsonString, Area::class.java)
+            for (item in area.data) {
+                val contours: List<List<GeoPoint>> = listOf(
+                    item.map { GeoPoint(it.latitude, it.longitude) }
+                )
+                polygonsLightBlue.add(
+                    Polygon(
+                        PolygonOptions(
+                            contours = contours,
+                            color = Color(red = 5, green = 171, blue = 192, alpha = 80),
+                            strokeColor = Color(red = 5, green = 171, blue = 192, alpha = 255),
+                            strokeWidth = 2.lpx
+                        )
+                    )
+                )
+            }
 
-            polygonsBlue.add(
-                Polygon(
-                    PolygonOptions(
-                        contours = listOf(
-                            listOf(
-                                GeoPoint(latitude = 55.046347, longitude = 82.90426),
-                                GeoPoint(latitude = 55.042574, longitude = 82.89267),
-                                GeoPoint(latitude = 55.037593, longitude = 82.897807),
-                                GeoPoint(latitude = 55.040813, longitude = 82.908651),
-                                GeoPoint(latitude = 55.046347, longitude = 82.90426),
-                            )
-                        ),
-                        color = Color(red = 49, green = 65, blue = 119, alpha = 80),
-                        strokeColor = Color(red = 49, green = 65, blue = 119, alpha = 255),
-                    )
-                )
-            )
-            polygonsBlue.add(
-                Polygon(
-                    PolygonOptions(
-                        contours = listOf(
-                            listOf(
-                                GeoPoint(latitude = 55.042213, longitude = 82.917609),
-                                GeoPoint(latitude = 55.036593, longitude = 82.918662),
-                                GeoPoint(latitude = 55.038705, longitude = 82.942752),
-                                GeoPoint(latitude = 55.044341, longitude = 82.941758),
-                                GeoPoint(latitude = 55.042213, longitude = 82.917609),
-                            )
-                        ),
-                        color = Color(red = 49, green = 65, blue = 119, alpha = 80),
-                        strokeColor = Color(red = 49, green = 65, blue = 119, alpha = 255),
-                    )
-                )
-            )
-            mapObjectManager!!.addObjects(polygonsBlue)
-
-            polygonsLightBlue.add(
-                Polygon(
-                    PolygonOptions(
-                        contours = listOf(
-                            listOf(
-                                GeoPoint(latitude = 55.106416, longitude = 82.827259),
-                                GeoPoint(latitude = 55.101216, longitude = 83.035203),
-                                GeoPoint(latitude = 54.947494, longitude = 83.095428),
-                                GeoPoint(latitude = 54.905705, longitude = 82.894301),
-                                GeoPoint(latitude = 55.014005, longitude = 82.792033),
-                                GeoPoint(latitude = 55.106416, longitude = 82.827259),
-                            )
-                        ),
-                        color = Color(red = 193, green = 210, blue = 252, alpha = 80),
-                        strokeColor = Color(red = 193, green = 210, blue = 252, alpha = 255),
-                    )
-                )
-            )
             mapObjectManager!!.addObjects(polygonsLightBlue)
+
+            connectionCamera = map.camera.positionChannel.connect { position ->
+                val zoom = position.zoom.value
+
+                val newLightBlueColor = lightBlueColor.value(zoom)
+                val newLightBlueStrokeColor = lightBlueStrokeColor.value(zoom)
+
+                for (polygon in polygonsLightBlue) {
+                    polygon.strokeColor = Color(red = polygon.strokeColor.red, green = polygon.strokeColor.green, blue = polygon.strokeColor.blue, alpha = (255 * newLightBlueStrokeColor).roundToInt())
+                    polygon.color = Color(red = polygon.color.red, green = polygon.color.green, blue = polygon.color.blue, alpha = (255 * newLightBlueColor).roundToInt())
+                }
+            }
         }
     }
+}
+
+fun Map<Float, Float>.value(zoom: Float): Float {
+    val prev = entries.lastOrNull { it.key < zoom }
+    if (prev == null) return entries.first().value
+
+    val next = entries.firstOrNull { it.key > zoom }
+    if (next == null) return entries.last().value
+
+    val value = (zoom - prev.key) / (next.key - prev.key)
+    if (prev.value == value) return prev.value
+
+
+    val result = (prev.value - next.value).absoluteValue * value
+    if (prev.value > next.value) return prev.value - result
+
+    return prev.value + result
 }
